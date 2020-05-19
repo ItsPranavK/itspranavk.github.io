@@ -1,0 +1,236 @@
+---
+title: "Analyzing the Effect of External Factors on Crimes Reported in Boston"
+date: "Pranav Kulkarni"
+author: "CMSC 320 Final Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Introduction
+
+The ability to successfully analyze crime data is important to any major city and as cities expand, the need to accurately analyze crime data grows too — this is where data science steps in. Good data science techniques can be used to analyze hundreds of thousands of data points to find trends that will help city officials better allocate resources to curb crime rates. It can be used to find simple trends between time, day, and the crimes reported to be able to also model crime.
+
+Therefore, for the final project of CMSC 320, **I have decided to analyze the effect of external factors like location of police stations, universities, and weather on the crimes reported in the Greater Boston area.**
+
+For this analysis, I will use the _Crimes Reported in Boston_ data set in addition to other data sets for police stations, universities, public schools, and the weather. I chose the Greater Boston area as the focus of my analysis because of their extensive open data hub, known as "Analyze Boston". This enables any aspiring data scientist to access almost 160 extensive, accurate, and well-documented data sets.
+
+### 1.1. Motivation
+
+I first encountered the _Crimes Reported in Boston_ data set two years ago while working on a group research project for the First-Year Innovation and Research Experience (FIRE) program. For that research project, my group and I analyzed _Crimes Reported in Boston_ data set using our limited knowledge of CSV files, Excel, a little R, and some basic statistics. Although the project was very trivial, it inspired me to get into the data science field and further explore a potential career in it.
+
+By revisiting the _Crimes Reported in Boston_ data set after two years, my journey in the field of data science has come full circle. I want to apply the data science skills I have learned while taking CMSC 320 and my other experience in research to see how I have matured as a data scientist in the last two years at the University of Maryland.
+
+**_Before I begin my analysis, I would like to mention that this final project has no similarity with research project. It merely uses the same data set._**
+
+## 2. Getting Started with the Data
+
+In this section, we will get started with preparing our data for our analysis for the final project.
+
+### 2.1. Required Libraries and Setup
+
+We are going to mostly use the `tidyverse` package to simplify pipelines and data processing, in addition to other packages to help us visualize the data and conduct analysis.
+
+```{r p22, echo=TRUE, message=FALSE}
+
+library(tidyverse)
+library(lubridate)
+library(broom)
+library(leaflet)
+
+```
+
+### 2.2. Loading the Data
+
+We are using open data hubs to access all the data sets we need. Since all of the data we need for the final project is available as CSV files, we will be using `read_csv()` to load all our data sets.
+
+#### Crimes Reported in Boston
+
+The _Crimes Reported in Boston_ data set is an extensive and well-documented data set containing all the crimes reported in the Great Boston area from August 2015 to date i.e May 18th 2020. The data set can be found on: https://data.boston.gov/dataset/crime-incident-reports-august-2015-to-date-source-new-system
+
+The data set contains all the necessary information about crimes reported from Boston Police offense codes, date/time of the crime, address, and coordinates of the location where a crime was reported. 
+
+```{r p221, echo=TRUE, message=FALSE}
+
+crimes <- read_csv('Crimes_Reported.csv') %>%
+  drop_na(Lat, Long)
+crimes
+
+```
+
+#### Public Schools in Boston
+
+The _Public Schools in Boston_ data set contains all the public schools in the Greater Boston area. Since there are no coordinates specificed, we will have to conduct analysis for this data for an entire neighborhood in general, instead of specific areas. The data set can be found on: https://data.boston.gov/dataset/public-schools
+
+```{r p223, echo=TRUE, message=FALSE}
+
+schools <- read_csv('Public_Schools.csv')
+schools
+
+```
+
+#### Police Stations in Boston
+
+The _Police Stations in Boston_ data set lists all the police stations in the 12 districts of the Greater Boston area and the Boston Police Headquarters. Similar to the _Public Schools in Boston_ data set, since we only have information about districts/neighborhoods, we will only conduct analysis for a district as a whole instead of individual police stations. The data set can be found on: https://data.boston.gov/dataset/boston-police-stations
+
+```{r p224, echo=TRUE, message=FALSE}
+
+police <- read_csv('Boston_Police_Stations.csv')
+police
+
+```
+
+#### Weather Data for Boston
+
+The _Weather Data for Boston_ data set from NOAA contains weather data from the beginning of 2015 to date i.e 18th May 2020. It includes information about precipitation, snow, and the daily high and low temperature. The goal is to use this data set to find a correlation between severe weather conditions and crimes reported. The data set can be found on: https://www.ncdc.noaa.gov/cdo-web/datasets/GHCND/stations/GHCND:USW00014739/detail
+
+```{r p225, echo=TRUE, message=FALSE}
+
+weather <- read_csv('Weather.csv')
+weather
+
+```
+
+### 2.3. Tidying the Data
+
+Now that we have all the data sets we intend to use in my analysis, we will now tidy all these data sets so we can easily use them for our analysis purposes.
+
+#### Crimes Reported in Boston
+
+To tidy the _Crimes Reported in Boston_ data set, we strip down the data set to the important information only and remove redundancies that were created to simplify the data set such as `Location`, etc. We also mutate the `SHOOTING` attribute to show either 1 if there was a shooting or 0 if there was not. We are still keeping some information such as `OFFENSE_CODE_GROUP` and `STREET` so we can use it to visualize the crimes using the `leaflet` library.
+
+```{r p231, echo=TRUE, message=FALSE}
+
+crimes_tidy <- crimes %>%
+  mutate(OFFENSE_CODE = as.double(OFFENSE_CODE)) %>%
+  mutate(SHOOTING = ifelse(is.na(SHOOTING), 0, 1)) %>%
+  mutate(DATE = date(OCCURRED_ON_DATE))
+crimes_tidy$Location <- NULL
+crimes_tidy$UCR_PART <- NULL
+crimes_tidy$REPORTING_AREA <- NULL
+crimes_tidy$OFFENSE_DESCRIPTION <- NULL
+crimes_tidy$YEAR <- NULL
+crimes_tidy$MONTH <- NULL
+crimes_tidy$HOUR <- NULL
+crimes_tidy$INCIDENT_NUMBER <- NULL
+
+crimes_tidy
+
+```
+
+#### Weather in Boston
+
+To tidy the _Weather in Boston_ data set, we convert the `DATE` attribute to datetime for ease of use later. We will also prepare this data set for analysis by determining what constitutes as severe weather. Let us define that any amount of rain (precipitation) above 1 inches and snowfall above 3 inches.
+
+```{r p232, echo=TRUE, message=FALSE}
+
+weather_tidy <- weather %>%
+  mutate(DATE = mdy(DATE)) %>%
+  mutate(SEVERE = ifelse(PRCP > 1 | SNOW > 2, "Yes", "No"))
+
+weather_tidy
+
+```
+
+### 3. Visualization of Crimes Reported in Boston
+
+In this section, we will use the `leaflet` library to visualize all the crimes reported in Boston in September 2019. The markers will also be encoded with whether a shooting took place or not. Blue markers indicate a shooting was reported with the crime while red indicates no shooting occurred. 
+
+```{r p3, echo=TRUE, message=FALSE}
+
+popup <- "<b>%s %s</b><br/>%s<br/>%s"
+
+crimes_tidy %>%
+  filter(year(OCCURRED_ON_DATE) == 2019 & month(OCCURRED_ON_DATE) == 9) %>%
+  leaflet() %>%
+  addTiles() %>%
+  setView(lat = 42.3, lng = -71.1, zoom = 11) %>%
+  addCircleMarkers(~Long, ~Lat,
+                   popup = ~sprintf(popup, 
+                                    OFFENSE_CODE,
+                                    OFFENSE_CODE_GROUP,
+                                    STREET, 
+                                    as.character(OCCURRED_ON_DATE)),
+                   radius = 3,
+                   color = "#000000",
+                   fillColor = ~ifelse(SHOOTING, "#4974a5", "#ee3648"),
+                   stroke = TRUE,
+                   weight = 2,
+                   fillOpacity = 1)
+
+```
+
+### 4. Analysis of Crimes Reported in Boston
+
+Now that our data has been prepared and is tidy, we will start analyzing the effect of our external factors on the crimes reported in the Greater Boston area.
+
+#### 4.1. Effect of Severe Weather on Crime Reported
+
+The first external factor we are considering is severe weather. We are defining severe weather as rainfall above 1 inches and snowfall above 2 inches. To begin this analysis, we will count the number of crimes reported per day in the `crimes_tidy` data frame and inner join it with `weather_tidy`. We will also limit our data set to dates before 2020 because we do not have sufficient data for this year yet.
+
+Then, we will plot a linear fit for our hypothesis that severe weather has effect on crimes reported. Then we will create a linear regression model to check whether our hypothesis is true.
+
+```{r p41, echo=TRUE, message=FALSE}
+
+crimes_total <- crimes_tidy %>%
+  group_by(DATE) %>%
+  tally(name = 'COUNT')
+
+severe <- left_join(crimes_total, weather_tidy) %>%
+  filter(year(DATE) <= 2019)
+  
+severe %>%
+  ggplot(aes(x = DATE, y = COUNT, color = SEVERE)) + 
+  geom_smooth(method = lm) + 
+  labs(title = "Correlation between Severe Weather and Crimes Reported Across Time",
+       x = "Time",
+       y = "Crimes Reported")
+
+model <- lm(COUNT~SEVERE, data = severe) %>%
+  tidy()
+model
+
+```
+
+In the plot, we can clearly see that severe weather has an effect on the crimes reported. Although our standard error is high, we are consistently showing that severe weather reduces crimes reported.
+
+This is further proved by our linear regression model that has a p-value below our threshold of 0.05, suggesting a strong correlation between crimes reported and weather conditions.
+
+#### 4.2. Effect of Education on Crimes Reported
+
+The second external factor we are considering is whether an area with more public schools and wide spread education has less crime than areas which are less educated.
+
+```{r p42, echo=TRUE, message=FALSE}
+
+police_tidy <- police %>%
+  select(NAME, NEIGHBORHOOD) %>%
+  filter(NAME != "Boston Police Headquarters") %>%
+  mutate(DISTRICT = gsub("-","",substr(NAME, 10, 12))) %>%
+  mutate(CITY = NEIGHBORHOOD) %>%
+  select(CITY, DISTRICT)
+
+schools_count <- schools %>%
+  group_by(CITY) %>%
+  tally(name = "SCHOOLS_COUNT") %>%
+  inner_join(police_tidy)
+
+crimes_count <- crimes_tidy %>% 
+  group_by(DISTRICT) %>%
+  tally(name = "CRIMES_COUNT")
+
+df <- inner_join(schools_count, crimes_count, by = "DISTRICT") %>%
+  select(DISTRICT, SCHOOLS_COUNT, CRIMES_COUNT)
+df
+
+df %>% 
+  ggplot(aes(x = SCHOOLS_COUNT, y = CRIMES_COUNT, color = DISTRICT)) +
+  geom_point() +
+  labs(title = "Correlation between Public Schools and Crimes Reported in a District",
+       x = "Number of Public Schools",
+       y = "Crimes Reported")
+
+```
+
+As you can see from the above graph, there is no direct correlation between number of public schools and the crimes reported. Some districts with the highest number of public schools have the highest crimes reported while the same result is seen in districts with lesser number of schools.
